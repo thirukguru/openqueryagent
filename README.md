@@ -8,7 +8,7 @@ Translate natural language into precise vector database operations across multip
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Type Checked: mypy](https://img.shields.io/badge/type--checked-mypy-blue)](http://mypy-lang.org/)
 [![Code Style: ruff](https://img.shields.io/badge/code--style-ruff-purple)](https://docs.astral.sh/ruff/)
-[![Tests: 400 passing](https://img.shields.io/badge/tests-400%20passing-brightgreen)]()
+[![Tests: 407 passing](https://img.shields.io/badge/tests-407%20passing-brightgreen)]()
 
 ---
 
@@ -298,40 +298,39 @@ openqueryagent/
 
 ## 📋 Roadmap
 
-### Phase 1 — Core Engine ✅
 
-| Sprint | Deliverables | Status |
-|--------|-------------|--------|
-| **Sprint 1** | Pydantic v2 type system, exception hierarchy, filter DSL (`F` proxy), configuration models | ✅ Done |
-| **Sprint 2** | `QueryAgent` orchestrator, `LLMQueryPlanner`, `SimpleQueryPlanner`, `QueryExecutor` (parallel + topological sort), `QueryRouter`, `RRFReranker`, `LLMSynthesizer` (streaming), `ConversationMemory`, `SchemaInspector` | ✅ Done |
-| **Sprint 3** | Qdrant, Milvus, pgvector adapters + per-adapter filter compilers | ✅ Done |
-| **Sprint 4** | OpenAI & Anthropic LLM providers, OpenAI embeddings, CI pipeline, pre-commit hooks | ✅ Done |
+### Phase 3 — Server Layer (Remaining)
 
-### Phase 2 — Full Coverage ✅
+####Sprint 9: gRPC Server
+- `.proto` definitions for all service methods (Ask, Search, Aggregate)
+- Generate Python stubs with `grpcio-tools`
+- Implement gRPC server in `server/grpc/`
+- Server-streaming RPC for `AskStream`
 
-| Sprint | Deliverables | Status |
-|--------|-------------|--------|
-| **Sprint 5** | Weaviate, Pinecone, Chroma adapters + filter compilers | ✅ Done |
-| **Sprint 6** | Elasticsearch, AWS S3 Vectors adapters + filter compilers | ✅ Done |
-| **Sprint 7** | Ollama & Bedrock LLM providers, Cohere & HuggingFace & Bedrock embedding providers, `RuleBasedPlanner` | ✅ Done |
+#### TypeScript & Go SDKs
+- **TypeScript SDK** (`sdks/typescript/`)
+  - `OpenQueryAgent` client class with `ask()`, `search()`, `aggregate()`
+  - `askStream()` with WebSocket/SSE
+  - Filter builder, full TypeScript types
+  - Published to npm
+- **Go SDK** (`sdks/go/`)
+  - gRPC client with `Ask()`, `Search()`, `Aggregate()`
+  - `AskStream()` with gRPC streaming
+  - Published as Go module
 
-### Phase 3 — Server Layer 🔜
+### Phase 5 — Enterprise
 
-| Sprint | Deliverables | Status |
-|--------|-------------|--------|
-| **Sprint 8** | FastAPI REST server with OpenAPI spec, health endpoints, admin API | ✅ Done |
-| **Sprint 9** | gRPC server with protobuf definitions, streaming RPCs | 🔜 Planned |
-| **Sprint 10** | MCP (Model Context Protocol) server for LLM tool-use integration | 🔜 Planned |
-| **Sprint 11** | TypeScript & Go SDKs (auto-generated from OpenAPI + protobuf) | 🔜 Planned |
+#### Multi-Tenancy
+- Namespace isolation per tenant
+- Per-tenant configuration and rate limits
+- Tenant-scoped API keys
 
-### Phase 4 — Enterprise 🔜
+#### RBAC & Audit
+- Role-based collection access control
+- API key scoping (read-only, admin, per-collection)
+- Audit logging and usage analytics
 
-| Sprint | Deliverables | Status |
-|--------|-------------|--------|
-| **Sprint 12** | Multi-tenancy (namespace isolation, per-tenant config & rate limits) | 🔜 Planned |
-| **Sprint 13** | Observability (OpenTelemetry traces, Prometheus metrics) | ✅ Done |
-| **Sprint 14** | Production hardening (circuit breakers, graceful shutdown, Helm chart) | ✅ Done |
-| **Sprint 15** | Plugin system, CONTRIBUTING.md, issue templates | ✅ Done |
+
 
 ---
 

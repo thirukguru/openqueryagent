@@ -99,6 +99,7 @@ packages = ["openqueryagent"]
 
 [project.scripts]
 openqueryagent-server = "openqueryagent.server.__main__:main"
+openqueryagent-mcp = "openqueryagent.server.mcp_server:main"
 
 [tool.ruff]
 line-length = 100

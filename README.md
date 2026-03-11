@@ -255,43 +255,56 @@ pytest tests/ -v
 ```
 openqueryagent/
 ├── core/
-│   ├── agent.py          # QueryAgent — main orchestrator
-│   ├── planner.py        # LLM + Simple query planners
-│   ├── rule_planner.py   # Rule-based query planner
-│   ├── router.py         # Collection resolution + filter compilation
-│   ├── executor.py       # Parallel execution with timeouts
-│   ├── reranker.py       # NoopReranker + RRFReranker
-│   ├── synthesizer.py    # LLM answer generation with citations
-│   ├── memory.py         # Token-budgeted conversation history
-│   ├── schema.py         # Schema inspector + caching
-│   ├── filters.py        # Universal filter DSL (F proxy)
-│   ├── types.py          # Pydantic v2 models + enums
-│   ├── config.py         # Agent/executor configuration
-│   └── exceptions.py     # Error hierarchy
+│   ├── agent.py            # QueryAgent — main orchestrator
+│   ├── planner.py          # LLM + Simple query planners
+│   ├── rule_planner.py     # Rule-based query planner
+│   ├── router.py           # Collection resolution + filter compilation
+│   ├── executor.py         # Parallel execution with timeouts + circuit breakers
+│   ├── reranker.py         # NoopReranker + RRFReranker
+│   ├── synthesizer.py      # LLM answer generation with citations
+│   ├── memory.py           # Token-budgeted conversation history
+│   ├── schema.py           # Schema inspector + caching
+│   ├── filters.py          # Universal filter DSL (F proxy)
+│   ├── types.py            # Pydantic v2 models + enums
+│   ├── config.py           # Agent/executor configuration
+│   ├── exceptions.py       # Error hierarchy
+│   ├── circuit_breaker.py  # Per-adapter circuit breaker (closed → open → half-open)
+│   └── plugins.py          # Entry-point based plugin discovery
 ├── adapters/
-│   ├── base.py               # VectorStoreAdapter protocol
-│   ├── qdrant.py             # Qdrant adapter
-│   ├── milvus.py             # Milvus adapter
-│   ├── pgvector.py           # pgvector adapter
-│   ├── weaviate.py           # Weaviate adapter
-│   ├── pinecone.py           # Pinecone adapter
-│   ├── chroma.py             # Chroma adapter
-│   ├── elasticsearch.py      # Elasticsearch adapter
-│   ├── s3vectors.py          # AWS S3 Vectors adapter
-│   └── *_filters.py          # Per-adapter filter compilers
+│   ├── base.py             # VectorStoreAdapter protocol
+│   ├── qdrant.py           # Qdrant adapter
+│   ├── milvus.py           # Milvus adapter
+│   ├── pgvector.py         # pgvector adapter
+│   ├── weaviate.py         # Weaviate adapter
+│   ├── pinecone.py         # Pinecone adapter
+│   ├── chroma.py           # Chroma adapter
+│   ├── elasticsearch.py    # Elasticsearch adapter
+│   ├── s3vectors.py        # AWS S3 Vectors adapter
+│   └── *_filters.py        # Per-adapter filter compilers
 ├── llm/
-│   ├── base.py           # LLMProvider protocol
-│   ├── openai.py         # OpenAI provider
-│   ├── anthropic.py      # Anthropic provider
-│   ├── ollama.py         # Ollama provider (local)
-│   └── bedrock.py        # AWS Bedrock provider
+│   ├── base.py             # LLMProvider protocol
+│   ├── openai.py           # OpenAI provider
+│   ├── anthropic.py        # Anthropic provider
+│   ├── ollama.py           # Ollama provider (local)
+│   └── bedrock.py          # AWS Bedrock provider
 ├── embeddings/
-│   ├── base.py           # EmbeddingProvider protocol
-│   ├── openai.py         # OpenAI embeddings
-│   ├── cohere.py         # Cohere embeddings
-│   ├── huggingface.py    # HuggingFace embeddings
-│   └── bedrock.py        # AWS Bedrock embeddings
-└── py.typed              # PEP 561 marker
+│   ├── base.py             # EmbeddingProvider protocol
+│   ├── openai.py           # OpenAI embeddings
+│   ├── cohere.py           # Cohere embeddings
+│   ├── huggingface.py      # HuggingFace embeddings
+│   └── bedrock.py          # AWS Bedrock embeddings
+├── server/
+│   ├── api.py              # FastAPI REST server + /v1/metrics endpoint
+│   ├── mcp_server.py       # MCP stdio server for LLM tool-use
+│   ├── middleware.py       # Auth, rate limiting, request ID, correlation IDs
+│   ├── models.py           # Request/response Pydantic models
+│   ├── config.py           # Server configuration
+│   ├── dependencies.py     # FastAPI dependency injection
+│   └── websocket.py        # WebSocket streaming handler
+├── observability/
+│   ├── tracing.py          # OpenTelemetry span instrumentation
+│   └── metrics.py          # Prometheus counters, histograms, gauges
+└── py.typed                # PEP 561 marker
 ```
 
 ---

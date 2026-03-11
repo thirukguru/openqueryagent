@@ -1,3 +1,5 @@
+
+
 # OpenQueryAgent
 
 **Open-source, database-agnostic query agent for vector databases.**
@@ -12,21 +14,21 @@ Translate natural language into precise vector database operations across multip
 
 ---
 
-## ✨ Features
+## Features
 
-- 🔌 **8 Vector Database Adapters** — Qdrant, Milvus, pgvector, Weaviate, Pinecone, Chroma, Elasticsearch, AWS S3 Vectors
-- 🧠 **LLM-Powered Query Planning** — Decomposes complex queries into optimized sub-queries with automatic fallback
-- 🔍 **Universal Filter DSL** — Write filters once, compile to any backend's native format
-- 📡 **Streaming Responses** — Token-by-token answer generation with citation extraction
-- 🔄 **Multi-DB Federation** — Query across multiple databases in a single request
-- 🏗️ **Pluggable Pipeline** — Swap any component: planner, reranker, synthesizer, LLM, embedding model
-- 💬 **Conversation Memory** — Multi-turn dialogue with automatic token budget management
-- 🔒 **Security Hardened** — Input validation, SQL injection prevention, credential redaction, prompt injection protection
-- ✅ **Fully Typed** — Strict mypy with `py.typed` marker for downstream consumers
+* **8 Vector Database Adapters** — Qdrant, Milvus, pgvector, Weaviate, Pinecone, Chroma, Elasticsearch, AWS S3 Vectors
+* **LLM-Powered Query Planning** — Decomposes complex queries into optimized sub-queries with automatic fallback
+* **Universal Filter DSL** — Write filters once, compile to any backend's native format
+* **Streaming Responses** — Token-by-token answer generation with citation extraction
+* **Multi-DB Federation** — Query across multiple databases in a single request
+* **Pluggable Pipeline** — Swap any component: planner, reranker, synthesizer, LLM, embedding model
+* **Conversation Memory** — Multi-turn dialogue with automatic token budget management
+* **Security Hardened** — Input validation, SQL injection prevention, credential redaction, prompt injection protection
+* **Fully Typed** — Strict mypy with `py.typed` marker for downstream consumers
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -97,13 +99,14 @@ agent = QueryAgent(
     adapters={"qdrant": adapter},
     planner=SimpleQueryPlanner(default_collection="products"),
 )
+
 # Uses SimpleQueryPlanner — no LLM calls, just vector search
 results = await agent.search("wireless headphones")
 ```
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 User Query
@@ -134,54 +137,56 @@ User Query
 AskResponse { answer, citations, query_plan }
 ```
 
-### Pipeline
+---
 
-| Stage | Component | Purpose |
-|-------|-----------|---------| 
-| **Plan** | `LLMQueryPlanner` / `SimpleQueryPlanner` / `RuleBasedPlanner` | Decompose query into sub-queries with intent detection |
-| **Route** | `QueryRouter` | Resolve collections, compile filters to native format |
-| **Execute** | `QueryExecutor` | Parallel execution with timeouts and dependency ordering |
-| **Rerank** | `RRFReranker` / `NoopReranker` | Reciprocal Rank Fusion for multi-source results |
-| **Synthesize** | `LLMSynthesizer` | Generate answer with `[N]` citation extraction |
+## Pipeline
+
+| Stage      | Component                                                     | Purpose                                                  |
+| ---------- | ------------------------------------------------------------- | -------------------------------------------------------- |
+| Plan       | `LLMQueryPlanner` / `SimpleQueryPlanner` / `RuleBasedPlanner` | Decompose query into sub-queries with intent detection   |
+| Route      | `QueryRouter`                                                 | Resolve collections, compile filters to native format    |
+| Execute    | `QueryExecutor`                                               | Parallel execution with timeouts and dependency ordering |
+| Rerank     | `RRFReranker` / `NoopReranker`                                | Reciprocal Rank Fusion for multi-source results          |
+| Synthesize | `LLMSynthesizer`                                              | Generate answer with `[N]` citation extraction           |
 
 ---
 
-## 🔌 Supported Backends
+## Supported Backends
 
 ### Vector Databases
 
-| Backend | Extra | Search Types | Aggregation |
-|---------|-------|-------------|-------------|
-| **Qdrant** | `openqueryagent[qdrant]` | Vector, Keyword, Hybrid (prefetch) | Client-side scroll |
-| **Milvus** | `openqueryagent[milvus]` | Vector, Keyword, Hybrid | Client-side query |
-| **pgvector** | `openqueryagent[pgvector]` | Vector (⟺), Keyword (tsquery), Hybrid (CTE RRF) | Native SQL |
-| **Weaviate** | `openqueryagent[weaviate]` | Vector, Keyword (BM25), Hybrid | Client-side |
-| **Pinecone** | `openqueryagent[pinecone]` | Vector, Keyword, Hybrid | Client-side |
-| **Chroma** | `openqueryagent[chroma]` | Vector, Keyword | Client-side |
-| **Elasticsearch** | `openqueryagent[elasticsearch]` | Vector (kNN), Keyword (BM25), Hybrid | Native agg framework |
-| **AWS S3 Vectors** | `openqueryagent[s3vectors]` | Vector | Client-side |
+| Backend        | Extra                           | Search Types                         | Aggregation          |
+| -------------- | ------------------------------- | ------------------------------------ | -------------------- |
+| Qdrant         | `openqueryagent[qdrant]`        | Vector, Keyword, Hybrid (prefetch)   | Client-side scroll   |
+| Milvus         | `openqueryagent[milvus]`        | Vector, Keyword, Hybrid              | Client-side query    |
+| pgvector       | `openqueryagent[pgvector]`      | Vector, Keyword, Hybrid              | Native SQL           |
+| Weaviate       | `openqueryagent[weaviate]`      | Vector, Keyword (BM25), Hybrid       | Client-side          |
+| Pinecone       | `openqueryagent[pinecone]`      | Vector, Keyword, Hybrid              | Client-side          |
+| Chroma         | `openqueryagent[chroma]`        | Vector, Keyword                      | Client-side          |
+| Elasticsearch  | `openqueryagent[elasticsearch]` | Vector (kNN), Keyword (BM25), Hybrid | Native agg framework |
+| AWS S3 Vectors | `openqueryagent[s3vectors]`     | Vector                               | Client-side          |
 
 ### LLM Providers
 
-| Provider | Extra | Features |
-|----------|-------|----------|
-| **OpenAI** | `openqueryagent[openai]` | GPT-4o, JSON mode, streaming, Azure support |
-| **Anthropic** | `openqueryagent[anthropic]` | Claude, JSON extraction, streaming |
-| **Ollama** | Built-in | Local models (Llama 3, Mistral, Mixtral), streaming |
-| **AWS Bedrock** | `openqueryagent[bedrock]` | Claude, Titan, Llama via Bedrock |
+| Provider    | Extra                       | Features                                            |
+| ----------- | --------------------------- | --------------------------------------------------- |
+| OpenAI      | `openqueryagent[openai]`    | GPT-4o, JSON mode, streaming, Azure support         |
+| Anthropic   | `openqueryagent[anthropic]` | Claude, JSON extraction, streaming                  |
+| Ollama      | Built-in                    | Local models (Llama 3, Mistral, Mixtral), streaming |
+| AWS Bedrock | `openqueryagent[bedrock]`   | Claude, Titan, Llama via Bedrock                    |
 
 ### Embedding Providers
 
-| Provider | Models |
-|----------|--------|
-| **OpenAI** | `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002` |
-| **Cohere** | `embed-english-v3.0`, `embed-multilingual-v3.0` |
-| **HuggingFace** | Any `sentence-transformers` model |
-| **AWS Bedrock** | Titan Embed, Cohere Embed via Bedrock |
+| Provider    | Models                                                                       |
+| ----------- | ---------------------------------------------------------------------------- |
+| OpenAI      | `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002` |
+| Cohere      | `embed-english-v3.0`, `embed-multilingual-v3.0`                              |
+| HuggingFace | Any `sentence-transformers` model                                            |
+| AWS Bedrock | Titan Embed, Cohere Embed via Bedrock                                        |
 
 ---
 
-## 🔍 Universal Filter DSL
+## Universal Filter DSL
 
 Write filters once, compile to any backend:
 
@@ -191,41 +196,37 @@ from openqueryagent.core.filters import F
 # Build a filter
 f = (F.price < 50) & (F.category == "electronics") & ~(F.status == "discontinued")
 
-# The adapter's FilterCompiler translates to native format automatically
 results = await agent.search("wireless headphones", filters=f)
 ```
 
 ### Supported Operators
 
-| Category | Operators |
-|----------|-----------|
-| **Comparison** | `==`, `!=`, `<`, `<=`, `>`, `>=` |
-| **Collection** | `in_`, `not_in`, `between` |
-| **Text** | `contains`, `not_contains`, `starts_with`, `ends_with`, `regex` |
-| **Geo** | `geo_radius` |
-| **Existence** | `exists` |
-| **Boolean** | `&` (AND), `|` (OR), `~` (NOT) |
+| Category   | Operators                                                       |                 |
+| ---------- | --------------------------------------------------------------- | --------------- |
+| Comparison | `==`, `!=`, `<`, `<=`, `>`, `>=`                                |                 |
+| Collection | `in_`, `not_in`, `between`                                      |                 |
+| Text       | `contains`, `not_contains`, `starts_with`, `ends_with`, `regex` |                 |
+| Geo        | `geo_radius`                                                    |                 |
+| Existence  | `exists`                                                        |                 |
+| Boolean    | `&` (AND), `                                                    | `(OR),`~` (NOT) |
 
 ---
 
-## 💬 Conversation Memory
+## Conversation Memory
 
 Multi-turn dialogue with automatic context management:
 
 ```python
 response1 = await agent.ask("What products do you have in electronics?")
-# Agent remembers context
 response2 = await agent.ask("Which of those are under $30?")
-# Uses previous context for follow-up
 
-# Access memory directly
 agent.memory.get_messages()
 agent.memory.clear()
 ```
 
 ---
 
-## 🛠️ Development
+## Development
 
 ### Setup
 
@@ -240,113 +241,14 @@ pip install -e ".[dev,qdrant,milvus,pgvector,openai,anthropic]"
 ### Quality Checks
 
 ```bash
-# Linting
 ruff check openqueryagent/ tests/
-
-# Type checking (strict)
 mypy openqueryagent/
-
-# Tests (337 passing)
 pytest tests/ -v
 ```
 
-### Project Structure
-
-```
-openqueryagent/
-├── core/
-│   ├── agent.py            # QueryAgent — main orchestrator
-│   ├── planner.py          # LLM + Simple query planners
-│   ├── rule_planner.py     # Rule-based query planner
-│   ├── router.py           # Collection resolution + filter compilation
-│   ├── executor.py         # Parallel execution with timeouts + circuit breakers
-│   ├── reranker.py         # NoopReranker + RRFReranker
-│   ├── synthesizer.py      # LLM answer generation with citations
-│   ├── memory.py           # Token-budgeted conversation history
-│   ├── schema.py           # Schema inspector + caching
-│   ├── filters.py          # Universal filter DSL (F proxy)
-│   ├── types.py            # Pydantic v2 models + enums
-│   ├── config.py           # Agent/executor configuration
-│   ├── exceptions.py       # Error hierarchy
-│   ├── circuit_breaker.py  # Per-adapter circuit breaker (closed → open → half-open)
-│   └── plugins.py          # Entry-point based plugin discovery
-├── adapters/
-│   ├── base.py             # VectorStoreAdapter protocol
-│   ├── qdrant.py           # Qdrant adapter
-│   ├── milvus.py           # Milvus adapter
-│   ├── pgvector.py         # pgvector adapter
-│   ├── weaviate.py         # Weaviate adapter
-│   ├── pinecone.py         # Pinecone adapter
-│   ├── chroma.py           # Chroma adapter
-│   ├── elasticsearch.py    # Elasticsearch adapter
-│   ├── s3vectors.py        # AWS S3 Vectors adapter
-│   └── *_filters.py        # Per-adapter filter compilers
-├── llm/
-│   ├── base.py             # LLMProvider protocol
-│   ├── openai.py           # OpenAI provider
-│   ├── anthropic.py        # Anthropic provider
-│   ├── ollama.py           # Ollama provider (local)
-│   └── bedrock.py          # AWS Bedrock provider
-├── embeddings/
-│   ├── base.py             # EmbeddingProvider protocol
-│   ├── openai.py           # OpenAI embeddings
-│   ├── cohere.py           # Cohere embeddings
-│   ├── huggingface.py      # HuggingFace embeddings
-│   └── bedrock.py          # AWS Bedrock embeddings
-├── server/
-│   ├── api.py              # FastAPI REST server + /v1/metrics endpoint
-│   ├── mcp_server.py       # MCP stdio server for LLM tool-use
-│   ├── middleware.py       # Auth, rate limiting, request ID, correlation IDs
-│   ├── models.py           # Request/response Pydantic models
-│   ├── config.py           # Server configuration
-│   ├── dependencies.py     # FastAPI dependency injection
-│   └── websocket.py        # WebSocket streaming handler
-├── observability/
-│   ├── tracing.py          # OpenTelemetry span instrumentation
-│   └── metrics.py          # Prometheus counters, histograms, gauges
-└── py.typed                # PEP 561 marker
-```
-
 ---
 
-## 📋 Roadmap
+## License
 
+Apache 2.0 — see LICENSE for details.
 
-### Phase 3 — Server Layer (Remaining)
-
-####Sprint 9: gRPC Server
-- `.proto` definitions for all service methods (Ask, Search, Aggregate)
-- Generate Python stubs with `grpcio-tools`
-- Implement gRPC server in `server/grpc/`
-- Server-streaming RPC for `AskStream`
-
-#### TypeScript & Go SDKs
-- **TypeScript SDK** (`sdks/typescript/`)
-  - `OpenQueryAgent` client class with `ask()`, `search()`, `aggregate()`
-  - `askStream()` with WebSocket/SSE
-  - Filter builder, full TypeScript types
-  - Published to npm
-- **Go SDK** (`sdks/go/`)
-  - gRPC client with `Ask()`, `Search()`, `Aggregate()`
-  - `AskStream()` with gRPC streaming
-  - Published as Go module
-
-### Phase 5 — Enterprise
-
-#### Multi-Tenancy
-- Namespace isolation per tenant
-- Per-tenant configuration and rate limits
-- Tenant-scoped API keys
-
-#### RBAC & Audit
-- Role-based collection access control
-- API key scoping (read-only, admin, per-collection)
-- Audit logging and usage analytics
-
-
-
----
-
-## 📄 License
-
-Apache 2.0 — see [LICENSE](LICENSE) for details.

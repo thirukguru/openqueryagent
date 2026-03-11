@@ -27,8 +27,12 @@ from openqueryagent.core.types import (
     ExecutionStatus,
     RankedDocument,
     SearchResponse,
-    TokenUsage,
 )
+
+# Input validation constants
+_MAX_QUERY_LENGTH = 10_000
+_MAX_LIMIT = 1000
+_MAX_OFFSET = 100_000
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -115,18 +119,25 @@ class QueryAgent:
         """
         start = time.monotonic()
 
+        # Input validation
+        query = _validate_query(query)
+
         # Add query to memory
         self._memory.add_message("user", query)
 
         # Ensure schema is fresh
         schema_map = await self._schema_inspector.get_schema_map()
 
-        # Plan
-        plan = await self._planner.plan(
-            query=query,
-            schema_map=schema_map,
-            history=self._memory.get_messages(),
-        )
+        # Plan (with fallback on failure)
+        try:
+            plan = await self._planner.plan(
+                query=query,
+                schema_map=schema_map,
+                history=self._memory.get_messages(),
+            )
+        except Exception as e:
+            logger.warning("planner_failed_fallback", error=str(e))
+            plan = await SimpleQueryPlanner().plan(query=query, schema_map=schema_map)
 
         # Route
         router = QueryRouter(adapters=self._adapters, schema_map=schema_map)
@@ -140,7 +151,6 @@ class QueryAgent:
 
         # Collect documents
         all_documents: list[Document] = []
-        TokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
         for result in results:
             if result.status == ExecutionStatus.SUCCESS:
                 all_documents.extend(result.documents)
@@ -227,9 +237,17 @@ class QueryAgent:
         """
         start = time.monotonic()
 
+        # Input validation
+        query = _validate_query(query)
+        limit = max(1, min(limit, _MAX_LIMIT))
+
         schema_map = await self._schema_inspector.get_schema_map()
 
-        plan = await self._planner.plan(query=query, schema_map=schema_map)
+        try:
+            plan = await self._planner.plan(query=query, schema_map=schema_map)
+        except Exception as e:
+            logger.warning("planner_failed_fallback", error=str(e))
+            plan = await SimpleQueryPlanner().plan(query=query, schema_map=schema_map)
 
         router = QueryRouter(adapters=self._adapters, schema_map=schema_map)
         routed = router.route(plan)
@@ -267,9 +285,16 @@ class QueryAgent:
         """
         start = time.monotonic()
 
+        # Input validation
+        query = _validate_query(query)
+
         schema_map = await self._schema_inspector.get_schema_map()
 
-        plan = await self._planner.plan(query=query, schema_map=schema_map)
+        try:
+            plan = await self._planner.plan(query=query, schema_map=schema_map)
+        except Exception as e:
+            logger.warning("planner_failed_fallback", error=str(e))
+            plan = await SimpleQueryPlanner().plan(query=query, schema_map=schema_map)
 
         router = QueryRouter(adapters=self._adapters, schema_map=schema_map)
         routed = router.route(plan)
@@ -320,3 +345,17 @@ class QueryAgent:
             content = rd.document.content or str(rd.document.properties)
             lines.append(f"{i}. {content[:200]}")
         return "\n".join(lines)
+
+
+def _validate_query(query: str) -> str:
+    """Validate and sanitize a query string.
+
+    Raises ValueError if query is empty or exceeds max length.
+    """
+    if not query or not query.strip():
+        raise ValueError("Query must not be empty.")
+    if len(query) > _MAX_QUERY_LENGTH:
+        raise ValueError(
+            f"Query exceeds maximum length of {_MAX_QUERY_LENGTH} characters."
+        )
+    return query.strip()

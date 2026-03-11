@@ -8,18 +8,20 @@ Translate natural language into precise vector database operations across multip
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Type Checked: mypy](https://img.shields.io/badge/type--checked-mypy-blue)](http://mypy-lang.org/)
 [![Code Style: ruff](https://img.shields.io/badge/code--style-ruff-purple)](https://docs.astral.sh/ruff/)
+[![Tests: 337 passing](https://img.shields.io/badge/tests-337%20passing-brightgreen)]()
 
 ---
 
 ## ✨ Features
 
-- 🔌 **3 Vector Database Adapters** — Qdrant, Milvus, pgvector (5 more coming in Phase 2)
-- 🧠 **LLM-Powered Query Planning** — Decomposes complex queries into optimized sub-queries
+- 🔌 **8 Vector Database Adapters** — Qdrant, Milvus, pgvector, Weaviate, Pinecone, Chroma, Elasticsearch, AWS S3 Vectors
+- 🧠 **LLM-Powered Query Planning** — Decomposes complex queries into optimized sub-queries with automatic fallback
 - 🔍 **Universal Filter DSL** — Write filters once, compile to any backend's native format
 - 📡 **Streaming Responses** — Token-by-token answer generation with citation extraction
 - 🔄 **Multi-DB Federation** — Query across multiple databases in a single request
 - 🏗️ **Pluggable Pipeline** — Swap any component: planner, reranker, synthesizer, LLM, embedding model
 - 💬 **Conversation Memory** — Multi-turn dialogue with automatic token budget management
+- 🔒 **Security Hardened** — Input validation, SQL injection prevention, credential redaction, prompt injection protection
 - ✅ **Fully Typed** — Strict mypy with `py.typed` marker for downstream consumers
 
 ---
@@ -37,6 +39,9 @@ pip install openqueryagent[milvus,openai]
 
 # Or with pgvector
 pip install openqueryagent[pgvector,openai]
+
+# Or with Elasticsearch
+pip install openqueryagent[elasticsearch,openai]
 
 # Everything
 pip install openqueryagent[all]
@@ -132,8 +137,8 @@ AskResponse { answer, citations, query_plan }
 ### Pipeline
 
 | Stage | Component | Purpose |
-|-------|-----------|---------|
-| **Plan** | `LLMQueryPlanner` / `SimpleQueryPlanner` | Decompose query into sub-queries with intent detection |
+|-------|-----------|---------| 
+| **Plan** | `LLMQueryPlanner` / `SimpleQueryPlanner` / `RuleBasedPlanner` | Decompose query into sub-queries with intent detection |
 | **Route** | `QueryRouter` | Resolve collections, compile filters to native format |
 | **Execute** | `QueryExecutor` | Parallel execution with timeouts and dependency ordering |
 | **Rerank** | `RRFReranker` / `NoopReranker` | Reciprocal Rank Fusion for multi-source results |
@@ -150,6 +155,11 @@ AskResponse { answer, citations, query_plan }
 | **Qdrant** | `openqueryagent[qdrant]` | Vector, Keyword, Hybrid (prefetch) | Client-side scroll |
 | **Milvus** | `openqueryagent[milvus]` | Vector, Keyword, Hybrid | Client-side query |
 | **pgvector** | `openqueryagent[pgvector]` | Vector (⟺), Keyword (tsquery), Hybrid (CTE RRF) | Native SQL |
+| **Weaviate** | `openqueryagent[weaviate]` | Vector, Keyword (BM25), Hybrid | Client-side |
+| **Pinecone** | `openqueryagent[pinecone]` | Vector, Keyword, Hybrid | Client-side |
+| **Chroma** | `openqueryagent[chroma]` | Vector, Keyword | Client-side |
+| **Elasticsearch** | `openqueryagent[elasticsearch]` | Vector (kNN), Keyword (BM25), Hybrid | Native agg framework |
+| **AWS S3 Vectors** | `openqueryagent[s3vectors]` | Vector | Client-side |
 
 ### LLM Providers
 
@@ -157,12 +167,17 @@ AskResponse { answer, citations, query_plan }
 |----------|-------|----------|
 | **OpenAI** | `openqueryagent[openai]` | GPT-4o, JSON mode, streaming, Azure support |
 | **Anthropic** | `openqueryagent[anthropic]` | Claude, JSON extraction, streaming |
+| **Ollama** | Built-in | Local models (Llama 3, Mistral, Mixtral), streaming |
+| **AWS Bedrock** | `openqueryagent[bedrock]` | Claude, Titan, Llama via Bedrock |
 
 ### Embedding Providers
 
 | Provider | Models |
 |----------|--------|
 | **OpenAI** | `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002` |
+| **Cohere** | `embed-english-v3.0`, `embed-multilingual-v3.0` |
+| **HuggingFace** | Any `sentence-transformers` model |
+| **AWS Bedrock** | Titan Embed, Cohere Embed via Bedrock |
 
 ---
 
@@ -231,7 +246,7 @@ ruff check openqueryagent/ tests/
 # Type checking (strict)
 mypy openqueryagent/
 
-# Tests (250 passing)
+# Tests (337 passing)
 pytest tests/ -v
 ```
 
@@ -242,6 +257,7 @@ openqueryagent/
 ├── core/
 │   ├── agent.py          # QueryAgent — main orchestrator
 │   ├── planner.py        # LLM + Simple query planners
+│   ├── rule_planner.py   # Rule-based query planner
 │   ├── router.py         # Collection resolution + filter compilation
 │   ├── executor.py       # Parallel execution with timeouts
 │   ├── reranker.py       # NoopReranker + RRFReranker
@@ -253,20 +269,28 @@ openqueryagent/
 │   ├── config.py         # Agent/executor configuration
 │   └── exceptions.py     # Error hierarchy
 ├── adapters/
-│   ├── base.py           # VectorStoreAdapter protocol
-│   ├── qdrant.py         # Qdrant adapter
-│   ├── milvus.py         # Milvus adapter
-│   ├── pgvector.py       # pgvector adapter
-│   ├── qdrant_filters.py # Qdrant filter compiler
-│   ├── milvus_filters.py # Milvus filter compiler
-│   └── pgvector_filters.py # pgvector filter compiler
+│   ├── base.py               # VectorStoreAdapter protocol
+│   ├── qdrant.py             # Qdrant adapter
+│   ├── milvus.py             # Milvus adapter
+│   ├── pgvector.py           # pgvector adapter
+│   ├── weaviate.py           # Weaviate adapter
+│   ├── pinecone.py           # Pinecone adapter
+│   ├── chroma.py             # Chroma adapter
+│   ├── elasticsearch.py      # Elasticsearch adapter
+│   ├── s3vectors.py          # AWS S3 Vectors adapter
+│   └── *_filters.py          # Per-adapter filter compilers
 ├── llm/
 │   ├── base.py           # LLMProvider protocol
 │   ├── openai.py         # OpenAI provider
-│   └── anthropic.py      # Anthropic provider
+│   ├── anthropic.py      # Anthropic provider
+│   ├── ollama.py         # Ollama provider (local)
+│   └── bedrock.py        # AWS Bedrock provider
 ├── embeddings/
 │   ├── base.py           # EmbeddingProvider protocol
-│   └── openai.py         # OpenAI embeddings
+│   ├── openai.py         # OpenAI embeddings
+│   ├── cohere.py         # Cohere embeddings
+│   ├── huggingface.py    # HuggingFace embeddings
+│   └── bedrock.py        # AWS Bedrock embeddings
 └── py.typed              # PEP 561 marker
 ```
 
@@ -275,7 +299,7 @@ openqueryagent/
 ## 📋 Roadmap
 
 - **Phase 1** ✅ Core Engine + 3 Adapters (Qdrant, Milvus, pgvector)
-- **Phase 2** 🔜 Full DB Coverage (Weaviate, Pinecone, Chroma, Elasticsearch, S3 Vectors)
+- **Phase 2** ✅ Full DB Coverage (Weaviate, Pinecone, Chroma, Elasticsearch, S3 Vectors) + Advanced Providers
 - **Phase 3** 🔜 Server Layer (REST/gRPC/MCP + TypeScript & Go SDKs)
 - **Phase 4** 🔜 Enterprise (Multi-tenancy, RBAC, audit logging)
 

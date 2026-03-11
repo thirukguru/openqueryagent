@@ -6,6 +6,7 @@ Requires ``pymilvus`` (install with ``pip install openqueryagent[milvus]``).
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -125,7 +126,7 @@ class MilvusAdapter:
                 db_name=config.db_name,
                 timeout=config.timeout_seconds,
             )
-            logger.info("milvus_connected", uri=config.uri)
+            logger.info("milvus_connected", uri=config.uri.split("@")[-1] if "@" in config.uri else config.uri)
         except Exception as e:
             raise AdapterConnectionError(
                 f"Failed to connect to Milvus: {e}",
@@ -145,7 +146,7 @@ class MilvusAdapter:
         self._ensure_connected()
         start = time.monotonic()
         try:
-            self._client.list_collections()
+            await asyncio.to_thread(self._client.list_collections)
             latency = (time.monotonic() - start) * 1000
             return HealthStatus(
                 healthy=True,
@@ -167,7 +168,7 @@ class MilvusAdapter:
         """List all Milvus collections."""
         self._ensure_connected()
         try:
-            collections: list[str] = self._client.list_collections()
+            collections: list[str] = await asyncio.to_thread(self._client.list_collections)
             return collections
         except Exception as e:
             raise AdapterQueryError(
@@ -181,7 +182,7 @@ class MilvusAdapter:
         """Introspect collection schema from Milvus."""
         self._ensure_connected()
         try:
-            desc = self._client.describe_collection(collection)
+            desc = await asyncio.to_thread(self._client.describe_collection, collection)
         except Exception as e:
             raise SchemaError(
                 f"Failed to get schema for '{collection}': {e}",
@@ -244,8 +245,13 @@ class MilvusAdapter:
             anns_field = (search_params or {}).get("anns_field", "embedding")
             output_fields = (search_params or {}).get("output_fields", ["*"])
 
+            # Clamp limit/offset
+            limit = max(1, min(limit, 1000))
+            offset = max(0, min(offset, 100_000))
+
             if search_type == SearchType.VECTOR and query_vector:
-                results = self._client.search(
+                results = await asyncio.to_thread(
+                    self._client.search,
                     collection_name=collection,
                     data=[query_vector],
                     anns_field=anns_field,
@@ -256,7 +262,8 @@ class MilvusAdapter:
                 )
             elif search_type == SearchType.KEYWORD and filter_expr:
                 # Keyword search via query with filter
-                results_raw = self._client.query(
+                results_raw = await asyncio.to_thread(
+                    self._client.query,
                     collection_name=collection,
                     filter=filter_expr,
                     limit=limit,
@@ -267,7 +274,8 @@ class MilvusAdapter:
             else:
                 # Hybrid or fallback
                 if query_vector:
-                    results = self._client.search(
+                    results = await asyncio.to_thread(
+                        self._client.search,
                         collection_name=collection,
                         data=[query_vector],
                         anns_field=anns_field,
@@ -277,7 +285,8 @@ class MilvusAdapter:
                         output_fields=output_fields,
                     )
                 else:
-                    results_raw = self._client.query(
+                    results_raw = await asyncio.to_thread(
+                        self._client.query,
                         collection_name=collection,
                         filter=filter_expr or "id >= 0",
                         limit=limit,
@@ -307,7 +316,8 @@ class MilvusAdapter:
             filter_expr = filters if isinstance(filters, str) else "id >= 0"
             output_fields = [aggregation.field] if aggregation.field else ["*"]
 
-            results = self._client.query(
+            results = await asyncio.to_thread(
+                self._client.query,
                 collection_name=collection,
                 filter=filter_expr,
                 output_fields=output_fields,
@@ -347,7 +357,8 @@ class MilvusAdapter:
         """Retrieve documents by ID from Milvus."""
         self._ensure_connected()
         try:
-            results = self._client.get(
+            results = await asyncio.to_thread(
+                self._client.get,
                 collection_name=collection,
                 ids=ids,
                 output_fields=["*"],

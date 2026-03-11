@@ -131,10 +131,12 @@ class MilvusFilterCompiler:
 
         if expr.operator == FilterOperator.CONTAINS:
             # Milvus uses array_contains for array fields; for text we use LIKE
-            return f'{field} like "%{value}%"'
+            escaped = str(value).replace('"', '\\"')
+            return f'{field} like "%{escaped}%"'
 
         if expr.operator == FilterOperator.STARTS_WITH:
-            return f'{field} like "{value}%"'
+            escaped = str(value).replace('"', '\\"')
+            return f'{field} like "{escaped}%"'
 
         if expr.operator == FilterOperator.BETWEEN:
             if not isinstance(value, list) or len(value) != 2:

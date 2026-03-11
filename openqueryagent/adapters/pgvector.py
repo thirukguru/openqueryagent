@@ -6,6 +6,7 @@ Requires ``asyncpg`` (install with ``pip install openqueryagent[pgvector]``).
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -124,7 +125,7 @@ class PgvectorAdapter:
                 max_size=config.max_pool_size,
                 timeout=config.timeout_seconds,
             )
-            logger.info("pgvector_connected", dsn=config.dsn)
+            logger.info("pgvector_connected", dsn=_redact_dsn(config.dsn))
         except Exception as e:
             raise AdapterConnectionError(
                 f"Failed to connect to PostgreSQL: {e}",
@@ -267,9 +268,21 @@ class PgvectorAdapter:
         """Execute search on PostgreSQL table."""
         self._ensure_connected()
         try:
-            embedding_col = (search_params or {}).get("embedding_column", "embedding")
-            content_col = (search_params or {}).get("content_column", "content")
-            search_vector_col = (search_params or {}).get("search_vector_column", "search_vector")
+            # Validate and clamp limit/offset
+            limit = max(1, min(limit, 1000))
+            offset = max(0, min(offset, 100_000))
+
+            # Validate column names against allowlist
+            embedding_col = _validate_identifier(
+                (search_params or {}).get("embedding_column", "embedding"),
+            )
+            content_col = _validate_identifier(
+                (search_params or {}).get("content_column", "content"),
+            )
+            search_vector_col = _validate_identifier(
+                (search_params or {}).get("search_vector_column", "search_vector"),
+            )
+            safe_collection = _validate_identifier(collection)
 
             where_clause = ""
             params: list[Any] = []
@@ -283,23 +296,28 @@ class PgvectorAdapter:
             if search_type == SearchType.VECTOR and query_vector:
                 params.append(str(query_vector))
                 vec_param = f"${param_offset + 1}"
+                params.append(limit)
+                params.append(offset)
                 sql = f"""
                     SELECT *, ({embedding_col} <=> {vec_param}::vector) AS _distance
-                    FROM "{collection}"
+                    FROM "{safe_collection}"
                     {where_clause}
                     ORDER BY {embedding_col} <=> {vec_param}::vector
-                    LIMIT {limit} OFFSET {offset}
+                    LIMIT ${param_offset + 2} OFFSET ${param_offset + 3}
                 """
             elif search_type == SearchType.KEYWORD and query_text:
                 params.append(query_text)
                 text_param = f"${param_offset + 1}"
+                where_prefix = f"{where_clause.replace('WHERE ', '')} AND" if where_clause else ""
+                params.append(limit)
+                params.append(offset)
                 sql = f"""
                     SELECT *, ts_rank({search_vector_col}, plainto_tsquery({text_param})) AS _rank
-                    FROM "{collection}"
-                    {f"WHERE {where_clause.replace('WHERE ', '')} AND" if where_clause else "WHERE"}
+                    FROM "{safe_collection}"
+                    WHERE {where_prefix}
                      {search_vector_col} @@ plainto_tsquery({text_param})
                     ORDER BY _rank DESC
-                    LIMIT {limit} OFFSET {offset}
+                    LIMIT ${param_offset + 2} OFFSET ${param_offset + 3}
                 """
             elif search_type == SearchType.HYBRID and query_vector and query_text:
                 # CTE-based Reciprocal Rank Fusion
@@ -308,51 +326,59 @@ class PgvectorAdapter:
                 vec_param = f"${param_offset + 1}"
                 text_param = f"${param_offset + 2}"
                 rrf_k = 60
+                rrf_limit = limit * 3
+                where_prefix = f"{where_clause.replace('WHERE ', '')} AND" if where_clause else ""
+                params.append(limit)
+                params.append(offset)
                 sql = f"""
                     WITH vector_results AS (
                         SELECT *, ROW_NUMBER() OVER (
                             ORDER BY {embedding_col} <=> {vec_param}::vector
                         ) AS vec_rank
-                        FROM "{collection}"
+                        FROM "{safe_collection}"
                         {where_clause}
                         ORDER BY {embedding_col} <=> {vec_param}::vector
-                        LIMIT {limit * 3}
+                        LIMIT {rrf_limit}
                     ),
                     keyword_results AS (
                         SELECT *, ROW_NUMBER() OVER (
                             ORDER BY ts_rank({search_vector_col}, plainto_tsquery({text_param})) DESC
                         ) AS kw_rank
-                        FROM "{collection}"
-                        {f"WHERE {where_clause.replace('WHERE ', '')} AND" if where_clause else "WHERE"}
+                        FROM "{safe_collection}"
+                        WHERE {where_prefix}
                          {search_vector_col} @@ plainto_tsquery({text_param})
-                        LIMIT {limit * 3}
+                        LIMIT {rrf_limit}
                     )
-                    SELECT COALESCE(v.*, k.*) AS *,
-                           (1.0 / ({rrf_k} + COALESCE(v.vec_rank, {limit * 3}))
-                          + 1.0 / ({rrf_k} + COALESCE(k.kw_rank, {limit * 3}))) AS _rrf_score
+                    SELECT v.*,
+                           (1.0 / ({rrf_k} + COALESCE(v.vec_rank, {rrf_limit}))
+                          + 1.0 / ({rrf_k} + COALESCE(k.kw_rank, {rrf_limit}))) AS _rrf_score
                     FROM vector_results v
                     FULL OUTER JOIN keyword_results k ON v.id = k.id
                     ORDER BY _rrf_score DESC
-                    LIMIT {limit} OFFSET {offset}
+                    LIMIT ${param_offset + 3} OFFSET ${param_offset + 4}
                 """
             else:
                 # Fallback to vector search if vector available
                 if query_vector:
                     params.append(str(query_vector))
                     vec_param = f"${param_offset + 1}"
+                    params.append(limit)
+                    params.append(offset)
                     sql = f"""
                         SELECT *, ({embedding_col} <=> {vec_param}::vector) AS _distance
-                        FROM "{collection}"
+                        FROM "{safe_collection}"
                         {where_clause}
                         ORDER BY {embedding_col} <=> {vec_param}::vector
-                        LIMIT {limit} OFFSET {offset}
+                        LIMIT ${param_offset + 2} OFFSET ${param_offset + 3}
                     """
                 else:
+                    params.append(limit)
+                    params.append(offset)
                     sql = f"""
                         SELECT *
-                        FROM "{collection}"
+                        FROM "{safe_collection}"
                         {where_clause}
-                        LIMIT {limit} OFFSET {offset}
+                        LIMIT ${param_offset + 1} OFFSET ${param_offset + 2}
                     """
 
             async with self._pool.acquire() as conn:
@@ -432,7 +458,8 @@ class PgvectorAdapter:
         """Retrieve documents by ID from PostgreSQL."""
         self._ensure_connected()
         try:
-            sql = f'SELECT * FROM "{collection}" WHERE id = ANY($1)'
+            safe_collection = _validate_identifier(collection)
+            sql = f'SELECT * FROM "{safe_collection}" WHERE id = ANY($1)'
             async with self._pool.acquire() as conn:
                 rows = await conn.fetch(sql, ids)
 
@@ -467,3 +494,32 @@ class PgvectorAdapter:
                 adapter_id=self._adapter_id,
                 adapter_name=self.adapter_name,
             )
+
+
+# ---------------------------------------------------------------------------
+# Security helpers
+# ---------------------------------------------------------------------------
+
+_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _validate_identifier(name: str) -> str:
+    """Validate and sanitize a SQL identifier (table/column name).
+
+    Rejects any name that doesn't match ``[a-zA-Z_][a-zA-Z0-9_]*``.
+    """
+    cleaned = name.replace('"', "")
+    if not _IDENTIFIER_RE.match(cleaned):
+        msg = f"Invalid SQL identifier: {cleaned!r}"
+        raise AdapterQueryError(
+            msg,
+            adapter_id="pgvector",
+            adapter_name="pgvector",
+            collection="",
+        )
+    return cleaned
+
+
+def _redact_dsn(dsn: str) -> str:
+    """Redact password from a PostgreSQL DSN."""
+    return re.sub(r"://([^:]+):[^@]+@", r"://\1:***@", dsn)

@@ -8,6 +8,7 @@ Requires ``httpx`` (already a dependency via openai).
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -127,7 +128,6 @@ class OllamaProvider:
                 async for line in response.aiter_lines():
                     if not line:
                         continue
-                    import json
                     data = json.loads(line)
                     chunk_content = data.get("message", {}).get("content", "")
                     done = data.get("done", False)

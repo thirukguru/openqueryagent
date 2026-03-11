@@ -38,6 +38,7 @@ class SchemaInspector:
         self._cache_ttl = cache_ttl_seconds
         self._schema_map: SchemaMap | None = None
         self._last_refresh: float = 0.0
+        self._refresh_lock = asyncio.Lock()
 
     @property
     def is_stale(self) -> bool:
@@ -49,11 +50,14 @@ class SchemaInspector:
     async def get_schema_map(self) -> SchemaMap:
         """Get the unified schema map, refreshing if stale.
 
+        Uses a lock to prevent concurrent refresh stampede.
+
         Returns:
             SchemaMap with all collections across all adapters.
         """
-        if self.is_stale:
-            await self.refresh()
+        async with self._refresh_lock:
+            if self.is_stale:
+                await self.refresh()
         assert self._schema_map is not None
         return self._schema_map
 

@@ -1,0 +1,45 @@
+# OpenQueryAgent — example deployment with Qdrant
+#
+# Usage:
+#   docker compose up -d
+#
+# Then access:
+#   REST API:  http://localhost:8000/docs
+#   Qdrant UI: http://localhost:6333/dashboard
+
+services:
+  openqueryagent:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OQA_QDRANT_URL=http://qdrant:6333
+      - OQA_LLM_PROVIDER=openai
+      - OQA_LLM_MODEL=gpt-4o-mini
+      - OQA_LLM_API_KEY=${OPENAI_API_KEY}
+      - OQA_EMBEDDING_PROVIDER=openai
+      - OQA_EMBEDDING_MODEL=text-embedding-3-small
+      # Optional: set an API key to secure the server
+      # - OQA_API_KEY=your-secret-key
+      # Optional: rate limiting
+      # - OQA_RATE_LIMIT=100/minute
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  qdrant_data:

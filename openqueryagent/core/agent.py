@@ -12,6 +12,9 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from openqueryagent.observability.metrics import configure_metrics, get_metrics
+from openqueryagent.observability.tracing import configure_tracing, get_tracing
+
 from openqueryagent.core.config import AgentConfig
 from openqueryagent.core.executor import QueryExecutor
 from openqueryagent.core.memory import ConversationMemory
@@ -95,7 +98,9 @@ class QueryAgent:
         self._memory = ConversationMemory(max_tokens=self._config.executor_config.max_aggregation_scroll)
 
     async def initialize(self) -> None:
-        """Initialize the agent by refreshing schemas."""
+        """Initialize the agent by refreshing schemas and observability."""
+        configure_tracing(enabled=self._config.enable_tracing)
+        configure_metrics(enabled=self._config.enable_tracing)
         await self._schema_inspector.refresh()
         schema_map = await self._schema_inspector.get_schema_map()
         logger.info("agent_initialized", collections=len(schema_map.collections))
@@ -118,80 +123,93 @@ class QueryAgent:
             AskResponse with answer and citations, or async iterator if streaming.
         """
         start = time.monotonic()
+        tracing = get_tracing()
+        metrics = get_metrics()
 
         # Input validation
         query = _validate_query(query)
 
-        # Add query to memory
-        self._memory.add_message("user", query)
+        with tracing.span("oqa.ask", {"oqa.query": query[:200]}) as ask_span:
+            # Add query to memory
+            self._memory.add_message("user", query)
 
-        # Ensure schema is fresh
-        schema_map = await self._schema_inspector.get_schema_map()
+            # Ensure schema is fresh
+            schema_map = await self._schema_inspector.get_schema_map()
 
-        # Plan (with fallback on failure)
-        try:
-            plan = await self._planner.plan(
-                query=query,
-                schema_map=schema_map,
-                history=self._memory.get_messages(),
-            )
-        except Exception as e:
-            logger.warning("planner_failed_fallback", error=str(e))
-            plan = await SimpleQueryPlanner().plan(query=query, schema_map=schema_map)
+            # Plan (with fallback on failure)
+            with tracing.span("oqa.plan"):
+                try:
+                    plan = await self._planner.plan(
+                        query=query,
+                        schema_map=schema_map,
+                        history=self._memory.get_messages(),
+                    )
+                except Exception as e:
+                    logger.warning("planner_failed_fallback", error=str(e))
+                    plan = await SimpleQueryPlanner().plan(query=query, schema_map=schema_map)
 
-        # Route
-        router = QueryRouter(adapters=self._adapters, schema_map=schema_map)
-        routed = router.route(plan)
+            # Route
+            with tracing.span("oqa.route"):
+                router = QueryRouter(adapters=self._adapters, schema_map=schema_map)
+                routed = router.route(plan)
 
-        # Embed query if needed
-        query_vector = await self._embed_query(query)
+            # Embed query if needed
+            query_vector = await self._embed_query(query)
 
-        # Execute
-        results = await self._executor.execute(routed, query_vector=query_vector)
+            # Execute
+            with tracing.span("oqa.execute"):
+                results = await self._executor.execute(routed, query_vector=query_vector)
 
-        # Collect documents
-        all_documents: list[Document] = []
-        for result in results:
-            if result.status == ExecutionStatus.SUCCESS:
-                all_documents.extend(result.documents)
+            # Collect documents
+            all_documents: list[Document] = []
+            for result in results:
+                if result.status == ExecutionStatus.SUCCESS:
+                    all_documents.extend(result.documents)
 
-        # Rerank
-        ranked = await self._reranker.rerank(query, all_documents)
+            # Rerank
+            with tracing.span("oqa.rerank", {"oqa.input_count": len(all_documents)}):
+                ranked = await self._reranker.rerank(query, all_documents)
+            tracing.record_result_count(ask_span, len(ranked))
 
-        # Synthesize
-        if stream and self._synthesizer:
-            return self._stream_synthesis(query, ranked, plan, start)
+            # Synthesize
+            if stream and self._synthesizer:
+                return self._stream_synthesis(query, ranked, plan, start)
 
-        if self._synthesizer and plan.requires_synthesis:
-            docs_for_synthesis = [r.document for r in ranked[:10]]
-            synthesis = await self._synthesizer.synthesize(
-                query=query,
-                documents=docs_for_synthesis,
-                history=self._memory.get_messages(),
-            )
+            if self._synthesizer and plan.requires_synthesis:
+                with tracing.span("oqa.synthesize"):
+                    docs_for_synthesis = [r.document for r in ranked[:10]]
+                    synthesis = await self._synthesizer.synthesize(
+                        query=query,
+                        documents=docs_for_synthesis,
+                        history=self._memory.get_messages(),
+                    )
 
-            # Add answer to memory
-            self._memory.add_message("assistant", synthesis.answer)
+                # Add answer to memory
+                self._memory.add_message("assistant", synthesis.answer)
 
+                total_latency = (time.monotonic() - start) * 1000
+                tracing.record_latency(ask_span, total_latency)
+                metrics.inc_request("ask")
+                return AskResponse(
+                    answer=synthesis.answer,
+                    citations=synthesis.citations,
+                    query_plan=plan,
+                    confidence=synthesis.confidence,
+                    total_latency_ms=total_latency,
+                    tokens_used=synthesis.tokens_used,
+                )
+
+            # No synthesis, return documents
             total_latency = (time.monotonic() - start) * 1000
+            tracing.record_latency(ask_span, total_latency)
+            metrics.inc_request("ask")
+            answer = self._format_documents_answer(ranked)
+            self._memory.add_message("assistant", answer)
             return AskResponse(
-                answer=synthesis.answer,
-                citations=synthesis.citations,
+                answer=answer,
                 query_plan=plan,
-                confidence=synthesis.confidence,
                 total_latency_ms=total_latency,
-                tokens_used=synthesis.tokens_used,
             )
-
-        # No synthesis, return documents
-        total_latency = (time.monotonic() - start) * 1000
-        answer = self._format_documents_answer(ranked)
-        self._memory.add_message("assistant", answer)
-        return AskResponse(
-            answer=answer,
-            query_plan=plan,
-            total_latency_ms=total_latency,
-        )
 
     async def _stream_synthesis(
         self,
@@ -236,38 +254,49 @@ class QueryAgent:
             SearchResponse with ranked documents.
         """
         start = time.monotonic()
+        tracing = get_tracing()
+        metrics = get_metrics()
 
         # Input validation
         query = _validate_query(query)
         limit = max(1, min(limit, _MAX_LIMIT))
 
-        schema_map = await self._schema_inspector.get_schema_map()
+        with tracing.span("oqa.search", {"oqa.query": query[:200], "oqa.limit": limit}) as search_span:
+            schema_map = await self._schema_inspector.get_schema_map()
 
-        try:
-            plan = await self._planner.plan(query=query, schema_map=schema_map)
-        except Exception as e:
-            logger.warning("planner_failed_fallback", error=str(e))
-            plan = await SimpleQueryPlanner().plan(query=query, schema_map=schema_map)
+            with tracing.span("oqa.plan"):
+                try:
+                    plan = await self._planner.plan(query=query, schema_map=schema_map)
+                except Exception as e:
+                    logger.warning("planner_failed_fallback", error=str(e))
+                    plan = await SimpleQueryPlanner().plan(query=query, schema_map=schema_map)
 
-        router = QueryRouter(adapters=self._adapters, schema_map=schema_map)
-        routed = router.route(plan)
+            with tracing.span("oqa.route"):
+                router = QueryRouter(adapters=self._adapters, schema_map=schema_map)
+                routed = router.route(plan)
 
-        query_vector = await self._embed_query(query)
-        results = await self._executor.execute(routed, query_vector=query_vector)
+            query_vector = await self._embed_query(query)
 
-        all_documents: list[Document] = []
-        for result in results:
-            if result.status == ExecutionStatus.SUCCESS:
-                all_documents.extend(result.documents)
+            with tracing.span("oqa.execute"):
+                results = await self._executor.execute(routed, query_vector=query_vector)
 
-        ranked = await self._reranker.rerank(query, all_documents)
+            all_documents: list[Document] = []
+            for result in results:
+                if result.status == ExecutionStatus.SUCCESS:
+                    all_documents.extend(result.documents)
 
-        total_latency = (time.monotonic() - start) * 1000
-        return SearchResponse(
-            documents=ranked[:limit],
-            query_plan=plan,
-            total_latency_ms=total_latency,
-        )
+            with tracing.span("oqa.rerank", {"oqa.input_count": len(all_documents)}):
+                ranked = await self._reranker.rerank(query, all_documents)
+
+            total_latency = (time.monotonic() - start) * 1000
+            tracing.record_result_count(search_span, len(ranked[:limit]))
+            tracing.record_latency(search_span, total_latency)
+            metrics.inc_request("search")
+            return SearchResponse(
+                documents=ranked[:limit],
+                query_plan=plan,
+                total_latency_ms=total_latency,
+            )
 
     async def aggregate(
         self,
@@ -284,36 +313,45 @@ class QueryAgent:
             AggregationResponse with result.
         """
         start = time.monotonic()
+        tracing = get_tracing()
+        metrics = get_metrics()
 
         # Input validation
         query = _validate_query(query)
 
-        schema_map = await self._schema_inspector.get_schema_map()
+        with tracing.span("oqa.aggregate", {"oqa.query": query[:200]}) as agg_span:
+            schema_map = await self._schema_inspector.get_schema_map()
 
-        try:
-            plan = await self._planner.plan(query=query, schema_map=schema_map)
-        except Exception as e:
-            logger.warning("planner_failed_fallback", error=str(e))
-            plan = await SimpleQueryPlanner().plan(query=query, schema_map=schema_map)
+            with tracing.span("oqa.plan"):
+                try:
+                    plan = await self._planner.plan(query=query, schema_map=schema_map)
+                except Exception as e:
+                    logger.warning("planner_failed_fallback", error=str(e))
+                    plan = await SimpleQueryPlanner().plan(query=query, schema_map=schema_map)
 
-        router = QueryRouter(adapters=self._adapters, schema_map=schema_map)
-        routed = router.route(plan)
+            with tracing.span("oqa.route"):
+                router = QueryRouter(adapters=self._adapters, schema_map=schema_map)
+                routed = router.route(plan)
 
-        results = await self._executor.execute(routed)
+            with tracing.span("oqa.execute"):
+                results = await self._executor.execute(routed)
 
-        total_latency = (time.monotonic() - start) * 1000
-        for result in results:
-            if result.status == ExecutionStatus.SUCCESS and result.aggregation_result:
-                return AggregationResponse(
-                    result=result.aggregation_result,
-                    query_plan=plan,
-                    total_latency_ms=total_latency,
-                )
+            total_latency = (time.monotonic() - start) * 1000
+            tracing.record_latency(agg_span, total_latency)
+            metrics.inc_request("aggregate")
 
-        return AggregationResponse(
-            query_plan=plan,
-            total_latency_ms=total_latency,
-        )
+            for result in results:
+                if result.status == ExecutionStatus.SUCCESS and result.aggregation_result:
+                    return AggregationResponse(
+                        result=result.aggregation_result,
+                        query_plan=plan,
+                        total_latency_ms=total_latency,
+                    )
+
+            return AggregationResponse(
+                query_plan=plan,
+                total_latency_ms=total_latency,
+            )
 
     @property
     def memory(self) -> ConversationMemory:

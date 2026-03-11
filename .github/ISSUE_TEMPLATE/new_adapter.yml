@@ -1,0 +1,28 @@
+name: New Adapter Proposal
+description: Propose a new database adapter
+labels: [adapter, enhancement]
+body:
+  - type: textarea
+    id: database
+    attributes:
+      label: Database
+      description: Name and link to the database.
+      placeholder: "e.g. Redis Vector Search — https://redis.io/docs/stack/search/"
+    validations:
+      required: true
+  - type: textarea
+    id: justification
+    attributes:
+      label: Justification
+      description: Why should this adapter be added?
+    validations:
+      required: true
+  - type: dropdown
+    id: contributor
+    attributes:
+      label: Will you implement this?
+      options:
+        - "Yes, I'll submit a PR"
+        - "No, requesting someone else implement it"
+    validations:
+      required: true

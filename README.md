@@ -8,7 +8,7 @@ Translate natural language into precise vector database operations across multip
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Type Checked: mypy](https://img.shields.io/badge/type--checked-mypy-blue)](http://mypy-lang.org/)
 [![Code Style: ruff](https://img.shields.io/badge/code--style-ruff-purple)](https://docs.astral.sh/ruff/)
-[![Tests: 337 passing](https://img.shields.io/badge/tests-337%20passing-brightgreen)]()
+[![Tests: 400 passing](https://img.shields.io/badge/tests-400%20passing-brightgreen)]()
 
 ---
 
@@ -298,10 +298,40 @@ openqueryagent/
 
 ## 📋 Roadmap
 
-- **Phase 1** ✅ Core Engine + 3 Adapters (Qdrant, Milvus, pgvector)
-- **Phase 2** ✅ Full DB Coverage (Weaviate, Pinecone, Chroma, Elasticsearch, S3 Vectors) + Advanced Providers
-- **Phase 3** 🔜 Server Layer (REST/gRPC/MCP + TypeScript & Go SDKs)
-- **Phase 4** 🔜 Enterprise (Multi-tenancy, RBAC, audit logging)
+### Phase 1 — Core Engine ✅
+
+| Sprint | Deliverables | Status |
+|--------|-------------|--------|
+| **Sprint 1** | Pydantic v2 type system, exception hierarchy, filter DSL (`F` proxy), configuration models | ✅ Done |
+| **Sprint 2** | `QueryAgent` orchestrator, `LLMQueryPlanner`, `SimpleQueryPlanner`, `QueryExecutor` (parallel + topological sort), `QueryRouter`, `RRFReranker`, `LLMSynthesizer` (streaming), `ConversationMemory`, `SchemaInspector` | ✅ Done |
+| **Sprint 3** | Qdrant, Milvus, pgvector adapters + per-adapter filter compilers | ✅ Done |
+| **Sprint 4** | OpenAI & Anthropic LLM providers, OpenAI embeddings, CI pipeline, pre-commit hooks | ✅ Done |
+
+### Phase 2 — Full Coverage ✅
+
+| Sprint | Deliverables | Status |
+|--------|-------------|--------|
+| **Sprint 5** | Weaviate, Pinecone, Chroma adapters + filter compilers | ✅ Done |
+| **Sprint 6** | Elasticsearch, AWS S3 Vectors adapters + filter compilers | ✅ Done |
+| **Sprint 7** | Ollama & Bedrock LLM providers, Cohere & HuggingFace & Bedrock embedding providers, `RuleBasedPlanner` | ✅ Done |
+
+### Phase 3 — Server Layer 🔜
+
+| Sprint | Deliverables | Status |
+|--------|-------------|--------|
+| **Sprint 8** | FastAPI REST server with OpenAPI spec, health endpoints, admin API | ✅ Done |
+| **Sprint 9** | gRPC server with protobuf definitions, streaming RPCs | 🔜 Planned |
+| **Sprint 10** | MCP (Model Context Protocol) server for LLM tool-use integration | 🔜 Planned |
+| **Sprint 11** | TypeScript & Go SDKs (auto-generated from OpenAPI + protobuf) | 🔜 Planned |
+
+### Phase 4 — Enterprise 🔜
+
+| Sprint | Deliverables | Status |
+|--------|-------------|--------|
+| **Sprint 12** | Multi-tenancy (namespace isolation, per-tenant config & rate limits) | 🔜 Planned |
+| **Sprint 13** | Observability (OpenTelemetry traces, Prometheus metrics) | ✅ Done |
+| **Sprint 14** | Production hardening (circuit breakers, graceful shutdown, Helm chart) | ✅ Done |
+| **Sprint 15** | Plugin system, CONTRIBUTING.md, issue templates | ✅ Done |
 
 ---
 

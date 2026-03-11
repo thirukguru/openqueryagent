@@ -19,6 +19,8 @@ from openqueryagent.core.types import (
     SearchResult,
     SubQuery,
 )
+from openqueryagent.observability.metrics import get_metrics
+from openqueryagent.observability.tracing import get_tracing
 
 logger = structlog.get_logger(__name__)
 
@@ -27,7 +29,8 @@ class QueryExecutor:
     """Executes sub-queries against vector store adapters.
 
     Supports parallel execution with configurable concurrency,
-    dependency ordering, per-query timeouts, and graceful error handling.
+    dependency ordering, per-query timeouts, circuit breakers,
+    and graceful error handling.
 
     Args:
         config: Executor configuration.
@@ -35,6 +38,9 @@ class QueryExecutor:
 
     def __init__(self, config: ExecutorConfig | None = None) -> None:
         self._config = config or ExecutorConfig()
+        # Import here to avoid circular import at module level
+        from openqueryagent.core.circuit_breaker import CircuitBreakerRegistry
+        self._circuit_breakers = CircuitBreakerRegistry()
 
     async def execute(
         self,
@@ -113,41 +119,69 @@ class QueryExecutor:
         import time
 
         start = time.monotonic()
+        adapter_id = getattr(adapter, "adapter_id", "unknown")
+        tracing = get_tracing()
+        metrics = get_metrics()
 
         async with semaphore:
-            try:
-                result = await asyncio.wait_for(
-                    self._run_query(
-                        adapter=adapter,
-                        sub_query=sq,
-                        collection=collection,
-                        filters=filters,
-                        query_vector=query_vector,
-                    ),
-                    timeout=self._config.timeout_per_query,
-                )
-                latency = (time.monotonic() - start) * 1000
-                result.latency_ms = latency
-                return result
+            with tracing.span(
+                f"oqa.execute.{adapter_id}",
+                {"oqa.adapter": adapter_id, "oqa.collection": collection,
+                 "oqa.search_type": str(sq.search_type)},
+            ):
+                # Circuit breaker gate
+                breaker = self._circuit_breakers.get(adapter_id)
+                try:
+                    breaker.pre_call()
+                except Exception as e:
+                    latency = (time.monotonic() - start) * 1000
+                    metrics.observe_adapter_query(adapter_id, latency / 1000, status="circuit_open")
+                    return ExecutionResult(
+                        sub_query_id=sq.id,
+                        status=ExecutionStatus.ERROR,
+                        latency_ms=latency,
+                        error=str(e),
+                    )
 
-            except TimeoutError:
-                latency = (time.monotonic() - start) * 1000
-                logger.warning("query_timeout", sub_query_id=sq.id, latency_ms=latency)
-                return ExecutionResult(
-                    sub_query_id=sq.id,
-                    status=ExecutionStatus.TIMEOUT,
-                    latency_ms=latency,
-                    error=f"Query timed out after {self._config.timeout_per_query}s",
-                )
-            except Exception as e:
-                latency = (time.monotonic() - start) * 1000
-                logger.error("query_error", sub_query_id=sq.id, error=str(e))
-                return ExecutionResult(
-                    sub_query_id=sq.id,
-                    status=ExecutionStatus.ERROR,
-                    latency_ms=latency,
-                    error=str(e),
-                )
+                try:
+                    result = await asyncio.wait_for(
+                        self._run_query(
+                            adapter=adapter,
+                            sub_query=sq,
+                            collection=collection,
+                            filters=filters,
+                            query_vector=query_vector,
+                        ),
+                        timeout=self._config.timeout_per_query,
+                    )
+                    latency = (time.monotonic() - start) * 1000
+                    result.latency_ms = latency
+                    metrics.observe_adapter_query(adapter_id, latency / 1000)
+                    breaker.on_success()
+                    return result
+
+                except TimeoutError:
+                    latency = (time.monotonic() - start) * 1000
+                    logger.warning("query_timeout", sub_query_id=sq.id, latency_ms=latency)
+                    metrics.observe_adapter_query(adapter_id, latency / 1000, status="timeout")
+                    breaker.on_failure()
+                    return ExecutionResult(
+                        sub_query_id=sq.id,
+                        status=ExecutionStatus.TIMEOUT,
+                        latency_ms=latency,
+                        error=f"Query timed out after {self._config.timeout_per_query}s",
+                    )
+                except Exception as e:
+                    latency = (time.monotonic() - start) * 1000
+                    logger.error("query_error", sub_query_id=sq.id, error=str(e))
+                    metrics.observe_adapter_query(adapter_id, latency / 1000, status="error")
+                    breaker.on_failure()
+                    return ExecutionResult(
+                        sub_query_id=sq.id,
+                        status=ExecutionStatus.ERROR,
+                        latency_ms=latency,
+                        error=str(e),
+                    )
 
     async def _run_query(
         self,

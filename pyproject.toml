@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "openqueryagent"
-version = "0.1.0"
+version = "1.0.0"
 description = "Open-source, database-agnostic query agent that translates natural language into vector database operations"
 readme = "README.md"
 license = "Apache-2.0"
@@ -60,12 +60,19 @@ bedrock = ["aiobotocore>=2.12"]
 server = [
     "fastapi>=0.111",
     "uvicorn[standard]>=0.29",
+    "pydantic-settings>=2.2",
 ]
 grpc = [
     "grpcio>=1.64",
     "grpcio-tools>=1.64",
 ]
 mcp = ["mcp>=1.0"]
+observability = [
+    "opentelemetry-api>=1.24",
+    "opentelemetry-sdk>=1.24",
+    "opentelemetry-exporter-otlp>=1.24",
+    "prometheus-client>=0.20",
+]
 
 # Rerankers
 cohere = ["cohere>=5.5"]
@@ -89,6 +96,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["openqueryagent"]
+
+[project.scripts]
+openqueryagent-server = "openqueryagent.server.__main__:main"
 
 [tool.ruff]
 line-length = 100

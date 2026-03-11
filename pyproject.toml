@@ -1,0 +1,151 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openqueryagent"
+version = "0.1.0"
+description = "Open-source, database-agnostic query agent that translates natural language into vector database operations"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [
+    { name = "Thiru", email = "thiru@openqueryagent.dev" },
+]
+keywords = ["vector-database", "query-agent", "rag", "semantic-search", "nlp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "httpx>=0.25",
+    "tenacity>=8.0",
+    "structlog>=23.0",
+    "pyyaml>=6.0",
+    "tiktoken>=0.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/thirukguru/openqueryagent"
+Documentation = "https://thirukguru.github.io/openqueryagent"
+Repository = "https://github.com/thirukguru/openqueryagent"
+Issues = "https://github.com/thirukguru/openqueryagent/issues"
+
+[project.optional-dependencies]
+# Vector store adapters
+qdrant = ["qdrant-client[async]>=1.9"]
+milvus = ["pymilvus>=2.4"]
+pgvector = ["asyncpg>=0.29"]
+weaviate = ["weaviate-client>=4.6"]
+pinecone = ["pinecone>=3.0"]
+chroma = ["chromadb>=0.5"]
+elasticsearch = ["elasticsearch[async]>=8.13"]
+s3vectors = ["aiobotocore>=2.12"]
+
+# LLM providers
+openai = ["openai>=1.30"]
+anthropic = ["anthropic>=0.28"]
+bedrock = ["aiobotocore>=2.12"]
+
+# Server
+server = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+]
+grpc = [
+    "grpcio>=1.64",
+    "grpcio-tools>=1.64",
+]
+mcp = ["mcp>=1.0"]
+
+# Rerankers
+cohere = ["cohere>=5.5"]
+
+# Bundles
+all = [
+    "openqueryagent[qdrant,milvus,pgvector,weaviate,pinecone,chroma,elasticsearch,s3vectors]",
+    "openqueryagent[openai,anthropic,bedrock]",
+    "openqueryagent[server,grpc,mcp]",
+    "openqueryagent[cohere]",
+]
+
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["openqueryagent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "UP007",  # use X | Y for union types (we use this intentionally)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["openqueryagent"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+
+[[tool.mypy.overrides]]
+module = [
+    "qdrant_client.*",
+    "pymilvus.*",
+    "asyncpg.*",
+    "weaviate.*",
+    "pinecone.*",
+    "chromadb.*",
+    "elasticsearch.*",
+    "aiobotocore.*",
+    "cohere.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests requiring external services (deselect with '-m \"not integration\"')",
+]

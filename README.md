@@ -1,0 +1,286 @@
+# OpenQueryAgent
+
+**Open-source, database-agnostic query agent for vector databases.**
+
+Translate natural language into precise vector database operations across multiple backends — with a single unified API.
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Type Checked: mypy](https://img.shields.io/badge/type--checked-mypy-blue)](http://mypy-lang.org/)
+[![Code Style: ruff](https://img.shields.io/badge/code--style-ruff-purple)](https://docs.astral.sh/ruff/)
+
+---
+
+## ✨ Features
+
+- 🔌 **3 Vector Database Adapters** — Qdrant, Milvus, pgvector (5 more coming in Phase 2)
+- 🧠 **LLM-Powered Query Planning** — Decomposes complex queries into optimized sub-queries
+- 🔍 **Universal Filter DSL** — Write filters once, compile to any backend's native format
+- 📡 **Streaming Responses** — Token-by-token answer generation with citation extraction
+- 🔄 **Multi-DB Federation** — Query across multiple databases in a single request
+- 🏗️ **Pluggable Pipeline** — Swap any component: planner, reranker, synthesizer, LLM, embedding model
+- 💬 **Conversation Memory** — Multi-turn dialogue with automatic token budget management
+- ✅ **Fully Typed** — Strict mypy with `py.typed` marker for downstream consumers
+
+---
+
+## 🚀 Quick Start
+
+### Installation
+
+```bash
+# Core + Qdrant adapter + OpenAI LLM & embeddings
+pip install openqueryagent[qdrant,openai]
+
+# Or with Milvus
+pip install openqueryagent[milvus,openai]
+
+# Or with pgvector
+pip install openqueryagent[pgvector,openai]
+
+# Everything
+pip install openqueryagent[all]
+```
+
+### Basic Usage
+
+```python
+import asyncio
+from openqueryagent.core.agent import QueryAgent
+from openqueryagent.adapters.qdrant import QdrantAdapter
+from openqueryagent.llm.openai import OpenAIProvider
+from openqueryagent.embeddings.openai import OpenAIEmbedding
+
+async def main():
+    # Create components
+    adapter = QdrantAdapter(url="localhost", port=6333)
+    await adapter.connect()
+
+    llm = OpenAIProvider(model="gpt-4o-mini")
+    embedding = OpenAIEmbedding(model="text-embedding-3-small")
+
+    # Create agent
+    agent = QueryAgent(
+        adapters={"qdrant": adapter},
+        llm=llm,
+        embedding=embedding,
+    )
+    await agent.initialize()
+
+    # Ask a question — gets synthesized answer with citations
+    response = await agent.ask("What are the best products under $50?")
+    print(response.answer)
+    for citation in response.citations:
+        print(f"  [{citation.document_id}]: {citation.text_snippet}")
+
+    # Search — returns ranked documents without synthesis
+    results = await agent.search("machine learning papers", limit=5)
+    for doc in results.documents:
+        print(f"  {doc.document.id}: {doc.score:.3f}")
+
+asyncio.run(main())
+```
+
+### Without LLM (Zero-Cost Search)
+
+```python
+from openqueryagent.core.agent import QueryAgent
+from openqueryagent.adapters.qdrant import QdrantAdapter
+from openqueryagent.core.planner import SimpleQueryPlanner
+
+agent = QueryAgent(
+    adapters={"qdrant": adapter},
+    planner=SimpleQueryPlanner(default_collection="products"),
+)
+# Uses SimpleQueryPlanner — no LLM calls, just vector search
+results = await agent.search("wireless headphones")
+```
+
+---
+
+## 🏗️ Architecture
+
+```
+User Query
+    │
+    ▼
+┌──────────────────────────────────────────────────────┐
+│                  QueryAgent                           │
+│                                                       │
+│  ┌──────────┐   ┌────────┐   ┌──────────┐            │
+│  │  Schema   │──▶│ Query  │──▶│  Router  │            │
+│  │ Inspector │   │Planner │   │          │            │
+│  └──────────┘   └────────┘   └────┬─────┘            │
+│                                    │                  │
+│                               ┌────▼─────┐            │
+│                               │ Executor │ (parallel)  │
+│                               └────┬─────┘            │
+│                                    │                  │
+│                               ┌────▼─────┐            │
+│                               │ Reranker │ (RRF)      │
+│                               └────┬─────┘            │
+│                                    │                  │
+│                               ┌────▼──────┐           │
+│                               │Synthesizer│ (LLM)     │
+│                               └───────────┘           │
+└──────────────────────────────────────────────────────┘
+    │
+    ▼
+AskResponse { answer, citations, query_plan }
+```
+
+### Pipeline
+
+| Stage | Component | Purpose |
+|-------|-----------|---------|
+| **Plan** | `LLMQueryPlanner` / `SimpleQueryPlanner` | Decompose query into sub-queries with intent detection |
+| **Route** | `QueryRouter` | Resolve collections, compile filters to native format |
+| **Execute** | `QueryExecutor` | Parallel execution with timeouts and dependency ordering |
+| **Rerank** | `RRFReranker` / `NoopReranker` | Reciprocal Rank Fusion for multi-source results |
+| **Synthesize** | `LLMSynthesizer` | Generate answer with `[N]` citation extraction |
+
+---
+
+## 🔌 Supported Backends
+
+### Vector Databases
+
+| Backend | Extra | Search Types | Aggregation |
+|---------|-------|-------------|-------------|
+| **Qdrant** | `openqueryagent[qdrant]` | Vector, Keyword, Hybrid (prefetch) | Client-side scroll |
+| **Milvus** | `openqueryagent[milvus]` | Vector, Keyword, Hybrid | Client-side query |
+| **pgvector** | `openqueryagent[pgvector]` | Vector (⟺), Keyword (tsquery), Hybrid (CTE RRF) | Native SQL |
+
+### LLM Providers
+
+| Provider | Extra | Features |
+|----------|-------|----------|
+| **OpenAI** | `openqueryagent[openai]` | GPT-4o, JSON mode, streaming, Azure support |
+| **Anthropic** | `openqueryagent[anthropic]` | Claude, JSON extraction, streaming |
+
+### Embedding Providers
+
+| Provider | Models |
+|----------|--------|
+| **OpenAI** | `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002` |
+
+---
+
+## 🔍 Universal Filter DSL
+
+Write filters once, compile to any backend:
+
+```python
+from openqueryagent.core.filters import F
+
+# Build a filter
+f = (F.price < 50) & (F.category == "electronics") & ~(F.status == "discontinued")
+
+# The adapter's FilterCompiler translates to native format automatically
+results = await agent.search("wireless headphones", filters=f)
+```
+
+### Supported Operators
+
+| Category | Operators |
+|----------|-----------|
+| **Comparison** | `==`, `!=`, `<`, `<=`, `>`, `>=` |
+| **Collection** | `in_`, `not_in`, `between` |
+| **Text** | `contains`, `not_contains`, `starts_with`, `ends_with`, `regex` |
+| **Geo** | `geo_radius` |
+| **Existence** | `exists` |
+| **Boolean** | `&` (AND), `|` (OR), `~` (NOT) |
+
+---
+
+## 💬 Conversation Memory
+
+Multi-turn dialogue with automatic context management:
+
+```python
+response1 = await agent.ask("What products do you have in electronics?")
+# Agent remembers context
+response2 = await agent.ask("Which of those are under $30?")
+# Uses previous context for follow-up
+
+# Access memory directly
+agent.memory.get_messages()
+agent.memory.clear()
+```
+
+---
+
+## 🛠️ Development
+
+### Setup
+
+```bash
+git clone https://github.com/thirukguru/openqueryagent.git
+cd openqueryagent
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev,qdrant,milvus,pgvector,openai,anthropic]"
+```
+
+### Quality Checks
+
+```bash
+# Linting
+ruff check openqueryagent/ tests/
+
+# Type checking (strict)
+mypy openqueryagent/
+
+# Tests (250 passing)
+pytest tests/ -v
+```
+
+### Project Structure
+
+```
+openqueryagent/
+├── core/
+│   ├── agent.py          # QueryAgent — main orchestrator
+│   ├── planner.py        # LLM + Simple query planners
+│   ├── router.py         # Collection resolution + filter compilation
+│   ├── executor.py       # Parallel execution with timeouts
+│   ├── reranker.py       # NoopReranker + RRFReranker
+│   ├── synthesizer.py    # LLM answer generation with citations
+│   ├── memory.py         # Token-budgeted conversation history
+│   ├── schema.py         # Schema inspector + caching
+│   ├── filters.py        # Universal filter DSL (F proxy)
+│   ├── types.py          # Pydantic v2 models + enums
+│   ├── config.py         # Agent/executor configuration
+│   └── exceptions.py     # Error hierarchy
+├── adapters/
+│   ├── base.py           # VectorStoreAdapter protocol
+│   ├── qdrant.py         # Qdrant adapter
+│   ├── milvus.py         # Milvus adapter
+│   ├── pgvector.py       # pgvector adapter
+│   ├── qdrant_filters.py # Qdrant filter compiler
+│   ├── milvus_filters.py # Milvus filter compiler
+│   └── pgvector_filters.py # pgvector filter compiler
+├── llm/
+│   ├── base.py           # LLMProvider protocol
+│   ├── openai.py         # OpenAI provider
+│   └── anthropic.py      # Anthropic provider
+├── embeddings/
+│   ├── base.py           # EmbeddingProvider protocol
+│   └── openai.py         # OpenAI embeddings
+└── py.typed              # PEP 561 marker
+```
+
+---
+
+## 📋 Roadmap
+
+- **Phase 1** ✅ Core Engine + 3 Adapters (Qdrant, Milvus, pgvector)
+- **Phase 2** 🔜 Full DB Coverage (Weaviate, Pinecone, Chroma, Elasticsearch, S3 Vectors)
+- **Phase 3** 🔜 Server Layer (REST/gRPC/MCP + TypeScript & Go SDKs)
+- **Phase 4** 🔜 Enterprise (Multi-tenancy, RBAC, audit logging)
+
+---
+
+## 📄 License
+
+Apache 2.0 — see [LICENSE](LICENSE) for details.

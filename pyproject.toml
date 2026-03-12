@@ -55,6 +55,7 @@ s3vectors = ["aiobotocore>=2.12"]
 openai = ["openai>=1.30"]
 anthropic = ["anthropic>=0.28"]
 bedrock = ["aiobotocore>=2.12"]
+minimax = []  # uses httpx (core dependency) — no extra install needed
 
 # Server
 server = [
@@ -80,7 +81,7 @@ cohere = ["cohere>=5.5"]
 # Bundles
 all = [
     "openqueryagent[qdrant,milvus,pgvector,weaviate,pinecone,chroma,elasticsearch,s3vectors]",
-    "openqueryagent[openai,anthropic,bedrock]",
+    "openqueryagent[openai,anthropic,bedrock,minimax]",
     "openqueryagent[server,grpc,mcp]",
     "openqueryagent[cohere]",
 ]

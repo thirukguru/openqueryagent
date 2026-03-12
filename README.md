@@ -88,6 +88,27 @@ async def main():
 asyncio.run(main())
 ```
 
+### With MiniMax
+
+```python
+from openqueryagent.core.agent import QueryAgent
+from openqueryagent.adapters.qdrant import QdrantAdapter
+from openqueryagent.llm.minimax import MiniMaxProvider
+
+async def main():
+    adapter = QdrantAdapter(url="localhost", port=6333)
+    await adapter.connect()
+
+    # MiniMax-M2.5 with 204K context window — no extra install needed
+    llm = MiniMaxProvider(model="MiniMax-M2.5")  # uses MINIMAX_API_KEY env var
+
+    agent = QueryAgent(adapters={"qdrant": adapter}, llm=llm)
+    await agent.initialize()
+
+    response = await agent.ask("What are the latest trends in AI?")
+    print(response.answer)
+```
+
 ### Without LLM (Zero-Cost Search)
 
 ```python
@@ -172,6 +193,7 @@ AskResponse { answer, citations, query_plan }
 | ----------- | --------------------------- | --------------------------------------------------- |
 | OpenAI      | `openqueryagent[openai]`    | GPT-4o, JSON mode, streaming, Azure support         |
 | Anthropic   | `openqueryagent[anthropic]` | Claude, JSON extraction, streaming                  |
+| MiniMax     | Built-in                    | MiniMax-M2.5 (204K context), JSON mode, streaming   |
 | Ollama      | Built-in                    | Local models (Llama 3, Mistral, Mixtral), streaming |
 | AWS Bedrock | `openqueryagent[bedrock]`   | Claude, Titan, Llama via Bedrock                    |
 
